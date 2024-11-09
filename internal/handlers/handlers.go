@@ -45,7 +45,11 @@ func SetupRoutes(
 // handleHealth handles health check requests
 func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "healthy"}); err != nil {
+		h.logger.Error().Err(err).Msg("Failed to encode health check response")
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 }
 
 // handleSwarmTest handles incoming Swarm test webhook requests

@@ -33,7 +33,9 @@ func TestHordeService(t *testing.T) {
 				ID:    "test-job-id",
 				State: "Pending",
 			}
-			json.NewEncoder(w).Encode(resp)
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Fatalf("failed to encode JSON response: %v", err)
+			}
 		}))
 		defer server.Close()
 
@@ -93,7 +95,9 @@ func TestHordeService(t *testing.T) {
 						State:   tt.jobState,
 						Batches: tt.batches,
 					}
-					json.NewEncoder(w).Encode(resp)
+					if err := json.NewEncoder(w).Encode(resp); err != nil {
+						t.Fatalf("failed to encode JSON response: %v", err)
+					}
 				}))
 				defer server.Close()
 
