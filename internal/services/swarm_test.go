@@ -194,29 +194,3 @@ func TestSwarmService(t *testing.T) {
 		}
 	})
 }
-
-// Helper function to compare JSON request bodies
-func jsonEqual(t *testing.T, body []byte, expected models.SwarmUpdateRequest) bool {
-	t.Helper()
-	var actual models.SwarmUpdateRequest
-	if err := json.Unmarshal(body, &actual); err != nil {
-		t.Fatalf("Failed to unmarshal actual JSON: %v", err)
-		return false
-	}
-
-	return actual.Status == expected.Status &&
-		len(actual.Messages) == len(expected.Messages) &&
-		messagesEqual(actual.Messages, expected.Messages)
-}
-
-func messagesEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
