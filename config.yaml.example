@@ -1,0 +1,26 @@
+server:
+  port: 8080
+
+horde:
+  host: "https://horde.domain.com"
+  api_key: "service_account_key_here"
+  timeout: 30
+  template_id: "horde_template_id"
+  stream_id: "horde_stream_id"
+swarm:
+  host: "https://swarm.domain.com"
+  timeout: 30
+
+monitor:
+  interval: 30
+
+timeouts:
+  http_client: 30
+  shutdown: 5
+
+retry:
+  max_attempts: 3
+  initial_delay: 1
+  max_delay: 5
+
+log_level: "info"
