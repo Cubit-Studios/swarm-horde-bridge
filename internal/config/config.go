@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rs/zerolog"
 	"gopkg.in/yaml.v2"
 )
 
@@ -30,6 +31,14 @@ func Load(path string) (*Config, error) {
 	}
 
 	setDefaults(&cfg)
+
+	// Set global zerolog level based on config
+	level, err := zerolog.ParseLevel(cfg.LogLevel)
+	if err != nil {
+		level = zerolog.InfoLevel // fallback to info if invalid level
+	}
+	zerolog.SetGlobalLevel(level)
+
 	return &cfg, nil
 }
 
