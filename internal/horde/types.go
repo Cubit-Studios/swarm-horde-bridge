@@ -47,5 +47,7 @@ type Batch struct {
 
 type Step struct {
 	AbortedByUserId *string `json:"abortedByUserId"`
+	State           string  `json:"state"`
+	Outcome         string  `json:"outcome"`
 	Error           string  `json:"error"`
 }

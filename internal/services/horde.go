@@ -95,6 +95,10 @@ func (s *HordeService) GetJobStatus(ctx context.Context, jobID string) (models.J
 		return models.StatusUnknown, fmt.Errorf("expected response to be of type horde.GetJobResponse")
 	}
 
+	s.logger.Debug().
+		Interface("response", respTyped).
+		Msg("Detailed job response from Horde")
+
 	// Check for cancellation
 	if wasCancelled(respTyped) {
 		s.logger.Info().Str("job_id", jobID).Msg("Job was cancelled.")
@@ -133,11 +137,16 @@ func wasCancelled(job horde.GetJobResponse) bool {
 	return false
 }
 
-// hasErrors checks if any batch in the job has an error other than "None"
+// hasErrors checks if any batch and steps in the job have errors
 func hasErrors(job horde.GetJobResponse) bool {
 	for _, batch := range job.Batches {
 		if batch.Error != "None" {
 			return true
+		}
+		for _, step := range batch.Steps {
+			if step.Outcome == "Failure" {
+				return true
+			}
 		}
 	}
 	return false
