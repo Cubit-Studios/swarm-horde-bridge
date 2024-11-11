@@ -54,22 +54,6 @@ scripts\build.bat
 ./swarm-horde-bridge
 ```
 
-## Docker Deployment
-
-1. Build the image:
-```bash
-docker build -t swarm-horde-bridge .
-```
-
-2. Run the container:
-```bash
-docker run -d \
-  -p 8080:8080 \
-  -v $(pwd)/config.yaml:/app/config.yaml \
-  --name swarm-horde-bridge \
-  swarm-horde-bridge
-```
-
 ## Configuration
 
 The service can be configured through:
