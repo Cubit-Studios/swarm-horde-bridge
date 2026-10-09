@@ -19,16 +19,17 @@ jobs:
       uses: actions/setup-go@v5
       with:
         # Same toolchain family as the Docker image (latest stable Go);
-        # go.mod still declares the minimum supported version (1.23)
+        # go.mod still declares the minimum supported version (1.25)
         go-version: 'stable'
 
     - name: Install dependencies
       run: go mod download
 
     - name: Run linter
-      uses: golangci/golangci-lint-action@v6
+      # v2 of golangci-lint: v1.64 was built with Go 1.24 and refuses go.mod's 1.25 floor
+      uses: golangci/golangci-lint-action@v8
       with:
-        version: v1.64.8
+        version: v2.14.0
 
     - name: Run vet
       run: go vet ./...

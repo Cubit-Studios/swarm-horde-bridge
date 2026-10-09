@@ -1,0 +1,9 @@
+# golangci-lint v2 configuration
+version: "2"
+
+linters:
+  default: standard
+  exclusions:
+    # Same defaults v1 had: unchecked errors on Close/Remove/etc. in defers
+    presets:
+      - std-error-handling

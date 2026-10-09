@@ -176,7 +176,7 @@ func CheckUpdateURL(raw, allowedHost string) error {
 		if u.Port() != allowed.Port() {
 			return fmt.Errorf("update_url port must be %s", allowed.Port())
 		}
-	} else if p := u.Port(); p != "" && !(u.Scheme == "https" && p == "443") && !(u.Scheme == "http" && p == "80") {
+	} else if p := u.Port(); p != "" && (u.Scheme != "https" || p != "443") && (u.Scheme != "http" || p != "80") {
 		return fmt.Errorf("update_url port %s is not allowed", p)
 	}
 	return nil
