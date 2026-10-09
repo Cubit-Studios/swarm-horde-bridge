@@ -42,9 +42,13 @@ type JobMapping struct {
 	Reason string `json:"reason,omitempty"`
 	// PendingReport is true while the current Status still has to be
 	// delivered to Swarm (e.g. the previous update attempt failed)
-	PendingReport bool      `json:"pending_report,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	PendingReport bool `json:"pending_report,omitempty"`
+	// RunningReported is true once Swarm has been told the job is running.
+	// Horde flips between Waiting and Running between batches; Swarm (and
+	// anything listening to its activity, e.g. Slack) must hear "running" once.
+	RunningReported bool      `json:"running_reported,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // HordeCreateJobRequest represents a job creation request to Horde

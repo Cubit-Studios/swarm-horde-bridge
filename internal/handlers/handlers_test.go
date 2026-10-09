@@ -131,6 +131,7 @@ func TestWebhookAcceptsAndCreatesJobInBackground(t *testing.T) {
 	job, ok := env.storage.Get("job-1")
 	require.True(t, ok)
 	assert.Equal(t, models.StatusPending, job.Status)
+	assert.True(t, job.RunningReported, "the handler already told Swarm the job is running")
 	assert.False(t, job.PendingReport)
 	assert.Equal(t, "123", job.SwarmTest.Changelist)
 }

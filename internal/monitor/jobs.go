@@ -127,6 +127,7 @@ func (m *JobMonitor) checkJob(ctx context.Context, job *models.JobMapping) {
 	}
 
 	job.PendingReport = false
+	job.RunningReported = true
 	if err := m.jobStorage.Store(job.HordeJobID, job); err != nil {
 		log.Error().Err(err).Msg("failed to persist job status")
 	}
@@ -136,20 +137,22 @@ func (m *JobMonitor) checkJob(ctx context.Context, job *models.JobMapping) {
 func (m *JobMonitor) setStatus(log zerolog.Logger, job *models.JobMapping, status models.JobStatus, reason string) {
 	job.Status = status
 	job.Reason = reason
-	job.PendingReport = isReportable(status)
+	job.PendingReport = isReportable(job, status)
 	if err := m.jobStorage.Store(job.HordeJobID, job); err != nil {
 		log.Error().Err(err).Msg("failed to persist job status")
 	}
 	log.Info().Str("new_status", string(status)).Str("reason", reason).Msg("Job status updated.")
 }
 
-// isReportable reports whether a status is sent to Swarm
-func isReportable(status models.JobStatus) bool {
-	switch status {
-	case models.StatusRunning, models.StatusCompleted, models.StatusFailed:
+// isReportable reports whether a new status has to be sent to Swarm. Final
+// statuses always are; "running" only the first time, because Horde reports
+// Waiting between batches and every "running" update becomes a Swarm activity
+// (and a Slack notification).
+func isReportable(job *models.JobMapping, status models.JobStatus) bool {
+	if isFinal(status) {
 		return true
 	}
-	return false
+	return status == models.StatusRunning && !job.RunningReported
 }
 
 // isFinal reports whether a status ends the tracking of a job

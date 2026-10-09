@@ -269,3 +269,37 @@ func TestStartStopsOnContextCancel(t *testing.T) {
 		t.Fatal("monitor did not stop after context cancellation")
 	}
 }
+
+func TestCheckJobsReportsRunningOnlyOnce(t *testing.T) {
+	env := newTestEnv(t)
+	env.addJob(t, "job-1", models.StatusPending, env.clock.Now())
+
+	// Setup batch runs, then the job waits for an agent, then runs again
+	for _, state := range []string{"Running", "Waiting", "Running", "Waiting", "Running"} {
+		env.horde.set(`{"id":"job-1","state":"` + state + `","batches":[{"error":"None","steps":[]}]}`)
+		env.monitor.CheckJobs(context.Background())
+	}
+	assert.Equal(t, []string{"running"}, env.swarm.statuses())
+
+	env.horde.set(`{"id":"job-1","state":"Complete","batches":[{"error":"None","steps":[{"outcome":"Success"}]}]}`)
+	env.monitor.CheckJobs(context.Background())
+	assert.Equal(t, []string{"running", "pass"}, env.swarm.statuses())
+}
+
+func TestCheckJobsSkipsRunningWhenHandlerAlreadyReportedIt(t *testing.T) {
+	env := newTestEnv(t)
+	require.NoError(t, env.storage.Store("job-1", &models.JobMapping{
+		SwarmTest:       models.SwarmTestRequest{Changelist: "1", UpdateURL: env.updateURL},
+		HordeJobID:      "job-1",
+		Status:          models.StatusPending,
+		RunningReported: true,
+		CreatedAt:       env.clock.Now(),
+	}))
+	env.horde.set(`{"id":"job-1","state":"Running","batches":[{"error":"None","steps":[]}]}`)
+	env.monitor.CheckJobs(context.Background())
+	assert.Empty(t, env.swarm.statuses())
+
+	env.horde.set(`{"id":"job-1","state":"Complete","batches":[{"error":"None","steps":[{"outcome":"Success"}]}]}`)
+	env.monitor.CheckJobs(context.Background())
+	assert.Equal(t, []string{"pass"}, env.swarm.statuses())
+}

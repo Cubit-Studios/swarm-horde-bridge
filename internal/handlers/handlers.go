@@ -188,10 +188,12 @@ func (h *Handler) createJob(req models.SwarmTestRequest) {
 	// Report "running" before the job is stored: the monitor only sees the
 	// job afterwards, so its updates can never be overtaken by this one.
 	jobURL := h.hordeService.JobURL(jobID)
+	runningReported := true
 	if err := h.swarmService.UpdateStatus(ctx, req.UpdateURL, services.SwarmStatusRunning,
 		services.SwarmMessages("Started Horde job", jobURL), jobURL); err != nil {
-		// Not fatal: the monitor reports the status once the job runs
+		// Not fatal: the monitor reports "running" once the job runs
 		log.Error().Err(err).Msg("failed to update swarm status")
+		runningReported = false
 	}
 
 	now := time.Now()
@@ -202,8 +204,10 @@ func (h *Handler) createJob(req models.SwarmTestRequest) {
 		SwarmTest:  req,
 		HordeJobID: jobID,
 		Status:     models.StatusPending,
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		// Swarm already knows the job is running (unless that update failed)
+		RunningReported: runningReported,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	if err := h.jobStorage.Store(jobID, mapping); err != nil {
 		// The job is still tracked in memory, only a restart would lose it
