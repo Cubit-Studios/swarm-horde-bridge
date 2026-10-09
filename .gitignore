@@ -29,3 +29,5 @@ vendor/
 
 # Environment
 .env
+# Local job store
+data/

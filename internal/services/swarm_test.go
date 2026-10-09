@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,9 +113,7 @@ func TestSwarmService(t *testing.T) {
 				defer server.Close()
 
 				cfg := &config.Config{
-					Swarm: config.SwarmConfig{
-						Host: server.URL,
-					},
+					Swarm: config.SwarmConfig{Timeout: 5},
 				}
 
 				service := NewSwarmService(cfg, logger)
@@ -124,6 +123,25 @@ func TestSwarmService(t *testing.T) {
 					t.Errorf("UpdateStatus() error = %v, wantErr %v", err, tt.wantErr)
 				}
 			})
+		}
+	})
+
+	t.Run("Any 2xx is accepted and job URL is sent", func(t *testing.T) {
+		var got models.SwarmUpdateRequest
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&got)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer server.Close()
+
+		cfg := &config.Config{Swarm: config.SwarmConfig{Timeout: 5}}
+		service := NewSwarmService(cfg, logger)
+		err := service.UpdateStatus(context.Background(), server.URL+"/update", "pass", []string{"ok"}, "https://horde.example.com/job/abc")
+		if err != nil {
+			t.Fatalf("UpdateStatus() error = %v", err)
+		}
+		if got.JobUrl != "https://horde.example.com/job/abc" {
+			t.Errorf("Expected job url to be sent, got %q", got.JobUrl)
 		}
 	})
 
@@ -140,9 +158,7 @@ func TestSwarmService(t *testing.T) {
 		defer server.Close()
 
 		cfg := &config.Config{
-			Swarm: config.SwarmConfig{
-				Host: server.URL,
-			},
+			Swarm: config.SwarmConfig{Timeout: 5},
 		}
 
 		service := NewSwarmService(cfg, logger)
@@ -159,9 +175,7 @@ func TestSwarmService(t *testing.T) {
 
 	t.Run("Invalid URL", func(t *testing.T) {
 		cfg := &config.Config{
-			Swarm: config.SwarmConfig{
-				Host: "http://invalid-url",
-			},
+			Swarm: config.SwarmConfig{Timeout: 5},
 		}
 
 		service := NewSwarmService(cfg, logger)
@@ -179,9 +193,7 @@ func TestSwarmService(t *testing.T) {
 		defer server.Close()
 
 		cfg := &config.Config{
-			Swarm: config.SwarmConfig{
-				Host: server.URL,
-			},
+			Swarm: config.SwarmConfig{Timeout: 5},
 		}
 
 		service := NewSwarmService(cfg, logger)
@@ -193,4 +205,100 @@ func TestSwarmService(t *testing.T) {
 			t.Error("Expected timeout error, got nil")
 		}
 	})
+}
+
+func TestSwarmMessages(t *testing.T) {
+	long := strings.Repeat("x", 200)
+
+	msgs := SwarmMessages("Horde job failed", long)
+	if msgs[0] != "Horde job failed" {
+		t.Errorf("first message must be the summary, got %q", msgs[0])
+	}
+	if len(msgs) != 4 { // summary + 80 + 80 + 40
+		t.Fatalf("expected 4 messages, got %d: %v", len(msgs), msgs)
+	}
+	if strings.Join(msgs[1:], "") != long {
+		t.Error("details must be preserved across messages")
+	}
+
+	msgs = SwarmMessages(strings.Repeat("s", 100), strings.Repeat("d", 2000))
+	if len(msgs) != SwarmMaxMessages {
+		t.Errorf("expected at most %d messages, got %d", SwarmMaxMessages, len(msgs))
+	}
+	for _, m := range msgs {
+		if n := len([]rune(m)); n > SwarmMaxMessageLength {
+			t.Errorf("message longer than %d chars: %d", SwarmMaxMessageLength, n)
+		}
+	}
+
+	if got := SwarmMessages("ok"); len(got) != 1 {
+		t.Errorf("expected only the summary, got %v", got)
+	}
+}
+
+func TestUpdateStatusEnforcesSwarmLimits(t *testing.T) {
+	var got models.SwarmUpdateRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+	}))
+	defer server.Close()
+
+	messages := make([]string, 15)
+	for i := range messages {
+		messages[i] = strings.Repeat("é", 100)
+	}
+	service := NewSwarmService(&config.Config{Swarm: config.SwarmConfig{Timeout: 5}}, zerolog.Nop())
+	if err := service.UpdateStatus(context.Background(), server.URL, "fail", messages, ""); err != nil {
+		t.Fatalf("UpdateStatus() error = %v", err)
+	}
+	if len(got.Messages) != SwarmMaxMessages {
+		t.Errorf("expected %d messages, got %d", SwarmMaxMessages, len(got.Messages))
+	}
+	for _, m := range got.Messages {
+		if n := len([]rune(m)); n > SwarmMaxMessageLength {
+			t.Errorf("message longer than %d chars: %d", SwarmMaxMessageLength, n)
+		}
+	}
+}
+
+func TestCheckUpdateURL(t *testing.T) {
+	tests := []struct {
+		url     string
+		allowed string
+		wantErr bool
+	}{
+		{"https://swarm.example.com/api/v10/testruns/1/x", "", false},
+		{"http://anything/x", "", false},
+		{"ftp://swarm.example.com/x", "", true},
+		{"https://user:pw@swarm.example.com/x", "", true},
+		{"not a url", "", true},
+		{"https://swarm.example.com/api/x", "swarm.example.com", false},
+		{"https://SWARM.example.com:443/api/x", "swarm.example.com", false},
+		{"http://swarm.example.com/api/x", "swarm.example.com", true},
+		{"https://swarm.example.com:8443/api/x", "swarm.example.com", true},
+		{"https://swarm.example.com.evil.com/api/x", "swarm.example.com", true},
+		{"https://evil.com/api/x", "swarm.example.com", true},
+		{"https://swarm.example.com:8443/api/x", "swarm.example.com:8443", false},
+		{"https://swarm.example.com/api/x", "swarm.example.com:8443", true},
+		{"http://127.0.0.1:9000/x", "127.0.0.1:9000", false},
+		{"http://localhost/x", "localhost", false},
+		{"http://127.0.0.1:9001/x", "127.0.0.1:9000", true},
+	}
+	for _, tt := range tests {
+		err := CheckUpdateURL(tt.url, tt.allowed)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("CheckUpdateURL(%q, %q) error = %v, wantErr %v", tt.url, tt.allowed, err, tt.wantErr)
+		}
+	}
+}
+
+func TestUpdateStatusErrorsDoNotLeakUpdateURL(t *testing.T) {
+	service := NewSwarmService(&config.Config{Swarm: config.SwarmConfig{Timeout: 1}}, zerolog.Nop())
+	err := service.UpdateStatus(context.Background(), "http://127.0.0.1:1/api/v10/testruns/1/secret-token", "running", nil, "")
+	if err == nil {
+		t.Fatal("expected a connection error")
+	}
+	if strings.Contains(err.Error(), "secret-token") {
+		t.Errorf("error leaks the update URL: %v", err)
+	}
 }

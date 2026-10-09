@@ -38,8 +38,13 @@ type JobMapping struct {
 	SwarmTest  SwarmTestRequest `json:"swarm_test"`
 	HordeJobID string           `json:"horde_job_id"`
 	Status     JobStatus        `json:"status"`
-	CreatedAt  time.Time        `json:"created_at"`
-	UpdatedAt  time.Time        `json:"updated_at"`
+	// Reason explains a failed status (sent to Swarm)
+	Reason string `json:"reason,omitempty"`
+	// PendingReport is true while the current Status still has to be
+	// delivered to Swarm (e.g. the previous update attempt failed)
+	PendingReport bool      `json:"pending_report,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // HordeCreateJobRequest represents a job creation request to Horde

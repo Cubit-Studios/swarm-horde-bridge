@@ -6,42 +6,87 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        # Same toolchain family as the Docker image (latest stable Go);
+        # go.mod still declares the minimum supported version (1.23)
+        go-version: 'stable'
 
     - name: Install dependencies
       run: go mod download
 
     - name: Run linter
-      uses: golangci/golangci-lint-action@v3
+      uses: golangci/golangci-lint-action@v6
       with:
-        version: latest
+        version: v1.64.8
+
+    - name: Run vet
+      run: go vet ./...
 
     - name: Run tests
       run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
     - name: Upload coverage
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v5
       with:
-        file: ./coverage.txt
+        files: ./coverage.txt
+        token: ${{ secrets.CODECOV_TOKEN }}
+        fail_ci_if_error: false
 
     - name: Build
+      env:
+        CGO_ENABLED: '0'
       run: |
-        GOOS=linux GOARCH=amd64 go build -o swarm-horde-bridge-linux-amd64 ./cmd/server
-        GOOS=windows GOARCH=amd64 go build -o swarm-horde-bridge-windows-amd64.exe ./cmd/server
+        GOOS=linux GOARCH=amd64 go build -trimpath -o swarm-horde-bridge-linux-amd64 ./cmd/server
+        GOOS=windows GOARCH=amd64 go build -trimpath -o swarm-horde-bridge-windows-amd64.exe ./cmd/server
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: binaries
         path: |
           swarm-horde-bridge-linux-amd64
           swarm-horde-bridge-windows-amd64.exe
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build image (no push)
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        push: false
+        load: true
+        tags: swarm-horde-bridge:ci
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Smoke test image
+      run: |
+        docker run -d --name bridge -p 8080:8080 \
+          -e HORDE_HOST=http://horde.invalid \
+          -e HORDE_API_KEY=dummy \
+          -e HORDE_TEMPLATE_ID=template \
+          -e HORDE_STREAM_ID=stream \
+          swarm-horde-bridge:ci
+        for i in $(seq 1 20); do
+          if curl -fsS http://localhost:8080/health; then exit 0; fi
+          sleep 1
+        done
+        docker logs bridge
+        exit 1

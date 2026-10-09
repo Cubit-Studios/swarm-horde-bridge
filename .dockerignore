@@ -1,0 +1,24 @@
+# Keep the build context small and never ship local secrets
+.git
+.github
+.vscode
+.idea
+*.md
+!README.md
+Dockerfile
+.dockerignore
+
+# Local configuration may contain the Horde service account token
+config.yaml
+.env
+*.env
+
+# Local build outputs, data and test artifacts
+swarm-horde-bridge
+swarm-horde-bridge.exe
+swarm-horde-bridge-*
+data/
+*.test
+*.out
+coverage.txt
+*.log

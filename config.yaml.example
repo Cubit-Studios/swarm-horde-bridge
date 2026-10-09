@@ -1,26 +1,36 @@
+# Optional configuration file. Every setting can also be provided through an
+# environment variable (see README.md), which takes precedence over this file.
+# When the file does not exist the bridge runs from environment variables only.
+
 server:
-  port: 8080
+  port: 8080                              # PORT
+  webhook_token: ""                       # WEBHOOK_TOKEN - shared secret required on the webhook (?token=... or X-Webhook-Token)
 
 horde:
-  host: "https://horde.domain.com"
-  api_key: "service_account_key_here"
-  timeout: 30
-  template_id: "horde_template_id"
-  stream_id: "horde_stream_id"
+  host: "https://horde.domain.com"        # HORDE_HOST (required) - base URL used to call the Horde API
+  api_key: "service_account_key_here"     # HORDE_API_KEY (required) - Horde service account token
+  public_url: ""                          # HORDE_PUBLIC_URL - base URL of job links shown in Swarm (defaults to host)
+  timeout: 30                             # HORDE_TIMEOUT (seconds)
+  template_id: "horde_template_id"        # HORDE_TEMPLATE_ID (required)
+  stream_id: "horde_stream_id"            # HORDE_STREAM_ID (required)
+
 swarm:
-  host: "https://swarm.domain.com"
-  timeout: 30
+  # Status updates are POSTed to the update URL supplied by Swarm in each
+  # webhook request; allowed_host only restricts which URLs are accepted.
+  timeout: 30                             # SWARM_TIMEOUT (seconds)
+  allowed_host: ""                        # SWARM_ALLOWED_HOST - only POST updates to https://<this host[:port]> (recommended)
 
 monitor:
-  interval: 30
+  interval: 30                            # MONITOR_INTERVAL (seconds)
+  max_job_age: 14400                      # MAX_JOB_AGE (seconds) - unfinished jobs are reported as failed after this
 
 timeouts:
-  http_client: 30
-  shutdown: 5
+  shutdown: 5                             # TIMEOUT_SHUTDOWN (seconds)
 
 retry:
-  max_attempts: 3
-  initial_delay: 1
-  max_delay: 5
+  max_attempts: 3                         # RETRY_MAX_ATTEMPTS
+  initial_delay: 1                        # RETRY_INITIAL_DELAY (seconds)
+  max_delay: 5                            # RETRY_MAX_DELAY (seconds)
 
-log_level: "info"
+log_level: "info"                         # LOG_LEVEL (trace, debug, info, warn, error)
+data_dir: "data"                          # DATA_DIR - where jobs.json is persisted (relative to the working directory)
