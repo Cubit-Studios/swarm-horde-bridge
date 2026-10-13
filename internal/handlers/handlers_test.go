@@ -122,17 +122,15 @@ func TestWebhookAcceptsAndCreatesJobInBackground(t *testing.T) {
 	assert.Equal(t, http.StatusAccepted, rec.Code)
 	env.wait(t)
 
-	calls := env.calls()
-	require.Len(t, calls, 1)
-	assert.Equal(t, "running", calls[0].update.Status)
-	assert.Equal(t, "https://horde.example.com/job/job-1", calls[0].update.JobUrl)
-	assert.False(t, calls[0].jobInStore, "running must be reported before the job is stored")
+	// The first Swarm update is left to the monitor (Swarm overwrites updates
+	// sent right after the webhook returns)
+	assert.Empty(t, env.calls())
 
 	job, ok := env.storage.Get("job-1")
 	require.True(t, ok)
 	assert.Equal(t, models.StatusPending, job.Status)
-	assert.True(t, job.RunningReported, "the handler already told Swarm the job is running")
-	assert.False(t, job.PendingReport)
+	assert.False(t, job.RunningReported)
+	assert.True(t, job.PendingReport, "the monitor must report running with the job link on its first poll")
 	assert.Equal(t, "123", job.SwarmTest.Changelist)
 }
 
@@ -231,7 +229,10 @@ func TestWebhookSwarmAllowedHost(t *testing.T) {
 	}
 
 	env.wait(t)
-	assert.Len(t, env.calls(), 1, "only the allowed update URL is called")
+	assert.Empty(t, env.calls(), "no Swarm update at creation time")
+	jobs := env.storage.List()
+	require.Len(t, jobs, 1, "only the request with the allowed update URL creates a job")
+	assert.Equal(t, env.updateURL(), jobs[0].SwarmTest.UpdateURL)
 }
 
 func TestListJobsHidesUpdateURL(t *testing.T) {

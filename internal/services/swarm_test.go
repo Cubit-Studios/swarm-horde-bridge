@@ -126,6 +126,86 @@ func TestSwarmService(t *testing.T) {
 		}
 	})
 
+	t.Run("Cloudflare Access service token headers", func(t *testing.T) {
+		var id, secret string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id, secret = r.Header.Get("CF-Access-Client-Id"), r.Header.Get("CF-Access-Client-Secret")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"error":null,"messages":[],"data":{"testruns":[]}}`))
+		}))
+		defer server.Close()
+
+		cfg := &config.Config{Swarm: config.SwarmConfig{Timeout: 5}}
+		if err := NewSwarmService(cfg, logger).UpdateStatus(context.Background(), server.URL+"/update", "running", nil, ""); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if id != "" || secret != "" {
+			t.Errorf("no Access headers expected without credentials, got %q / %q", id, secret)
+		}
+
+		cfg.Swarm.AccessClientID, cfg.Swarm.AccessClientSecret = "abc.access", "s3cret"
+		if err := NewSwarmService(cfg, logger).UpdateStatus(context.Background(), server.URL+"/update", "running", nil, ""); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if id != "abc.access" || secret != "s3cret" {
+			t.Errorf("Access headers not sent, got %q / %q", id, secret)
+		}
+	})
+
+	t.Run("Redirects are not followed", func(t *testing.T) {
+		var gets int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/login" {
+				gets++
+				w.Header().Set("Content-Type", "text/html")
+				_, _ = w.Write([]byte("<html>login</html>"))
+				return
+			}
+			http.Redirect(w, r, "/login?redirect_url=secret", http.StatusFound)
+		}))
+		defer server.Close()
+
+		cfg := &config.Config{Swarm: config.SwarmConfig{Timeout: 5}}
+		err := NewSwarmService(cfg, logger).UpdateStatus(context.Background(), server.URL+"/update", "pass", nil, "")
+		if err == nil {
+			t.Fatal("a redirected update must fail")
+		}
+		if gets != 0 {
+			t.Errorf("the redirect was followed (%d GET)", gets)
+		}
+		if strings.Contains(err.Error(), "secret") {
+			t.Errorf("error leaks the redirect query: %v", err)
+		}
+	})
+
+	t.Run("HTML or API error responses fail", func(t *testing.T) {
+		cases := []struct {
+			name, contentType, body string
+			wantErr                 bool
+		}{
+			{"html page", "text/html; charset=UTF-8", "<html>Access</html>", true},
+			{"api error", "application/json; charset=utf-8", `{"error":"Unauthorized","messages":[]}`, true},
+			{"api ok", "application/json; charset=utf-8", `{"error":null,"messages":[],"data":{}}`, false},
+			{"empty body", "", "", false},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if tc.contentType != "" {
+						w.Header().Set("Content-Type", tc.contentType)
+					}
+					_, _ = w.Write([]byte(tc.body))
+				}))
+				defer server.Close()
+				cfg := &config.Config{Swarm: config.SwarmConfig{Timeout: 5}}
+				err := NewSwarmService(cfg, logger).UpdateStatus(context.Background(), server.URL+"/update", "pass", nil, "")
+				if (err != nil) != tc.wantErr {
+					t.Errorf("UpdateStatus() error = %v, wantErr %v", err, tc.wantErr)
+				}
+			})
+		}
+	})
+
 	t.Run("Any 2xx is accepted and job URL is sent", func(t *testing.T) {
 		var got models.SwarmUpdateRequest
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

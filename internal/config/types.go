@@ -71,6 +71,12 @@ type SwarmConfig struct {
 	// bridge will POST to: https on that host only (http is also allowed for
 	// localhost / 127.0.0.1). Empty disables the check.
 	AllowedHost string `yaml:"allowed_host" env:"SWARM_ALLOWED_HOST"`
+	// AccessClientID / AccessClientSecret: when Swarm sits behind Cloudflare
+	// Access, the credentials of an Access service token allowed by the Swarm
+	// application. They are sent as CF-Access-Client-Id / CF-Access-Client-Secret
+	// headers on every status update. Both empty disables them.
+	AccessClientID     string `yaml:"access_client_id" env:"SWARM_CF_ACCESS_CLIENT_ID"`
+	AccessClientSecret string `yaml:"access_client_secret" env:"SWARM_CF_ACCESS_CLIENT_SECRET"`
 }
 
 // MonitorConfig holds the job monitoring configuration

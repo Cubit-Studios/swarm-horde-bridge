@@ -32,7 +32,13 @@ type SwarmService struct {
 
 func NewSwarmService(cfg *config.Config, logger zerolog.Logger) *SwarmService {
 	return &SwarmService{
-		client: &http.Client{Timeout: cfg.GetSwarmTimeout()},
+		client: &http.Client{
+			Timeout: cfg.GetSwarmTimeout(),
+			// Never follow redirects: a POST that gets redirected (typically to
+			// a Cloudflare Access login page) would otherwise end as a GET of
+			// an HTML page with status 200, i.e. a silently lost update.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
 		config: cfg,
 		logger: logger,
 	}
@@ -58,6 +64,11 @@ func (s *SwarmService) UpdateStatus(ctx context.Context, updateURL string, statu
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if s.config.Swarm.AccessClientID != "" {
+		req.Header.Set("CF-Access-Client-Id", s.config.Swarm.AccessClientID)
+		req.Header.Set("CF-Access-Client-Secret", s.config.Swarm.AccessClientSecret)
+	}
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -65,12 +76,50 @@ func (s *SwarmService) UpdateStatus(ctx context.Context, updateURL string, statu
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= 300 && resp.StatusCode <= 399 {
+		return fmt.Errorf("swarm redirected the update (status %d) to %s: is Swarm behind an access proxy the bridge is not allowed through?",
+			resp.StatusCode, redirectTarget(resp.Header.Get("Location")))
+	}
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		return fmt.Errorf("unexpected status from swarm: %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
+	return checkSwarmResponse(resp.Header.Get("Content-Type"), respBody)
+}
 
+// checkSwarmResponse verifies that a 2xx response really comes from the Swarm
+// API: an HTML page (login or error page of a proxy) or a JSON body with a
+// non-null "error" means the update was not applied.
+func checkSwarmResponse(contentType string, body []byte) error {
+	ct := strings.ToLower(contentType)
+	if strings.Contains(ct, "text/html") {
+		return errors.New("swarm answered with an HTML page instead of the API response: the update was not applied")
+	}
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 || !strings.Contains(ct, "json") {
+		return nil
+	}
+	var parsed struct {
+		Error json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal(trimmed, &parsed); err != nil {
+		// Not the API's JSON object: tolerated (older Swarm versions answer differently)
+		return nil
+	}
+	if len(parsed.Error) > 0 && string(parsed.Error) != "null" {
+		return fmt.Errorf("swarm rejected the update: %s", truncateRunes(string(parsed.Error), 200))
+	}
 	return nil
+}
+
+// redirectTarget returns the scheme and host of a Location header, without
+// its path or query (which may carry tokens)
+func redirectTarget(location string) string {
+	u, err := url.Parse(location)
+	if err != nil || u.Host == "" {
+		return "<unknown>"
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // Swarm only displays short test run messages

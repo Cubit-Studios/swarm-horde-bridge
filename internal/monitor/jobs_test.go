@@ -286,7 +286,36 @@ func TestCheckJobsReportsRunningOnlyOnce(t *testing.T) {
 	assert.Equal(t, []string{"running", "pass"}, env.swarm.statuses())
 }
 
-func TestCheckJobsSkipsRunningWhenHandlerAlreadyReportedIt(t *testing.T) {
+func TestCheckJobsFirstPollReportsNewJobWithLink(t *testing.T) {
+	env := newTestEnv(t)
+	// As stored by the webhook handler: nothing reported to Swarm yet
+	require.NoError(t, env.storage.Store("job-1", &models.JobMapping{
+		SwarmTest:     models.SwarmTestRequest{Changelist: "1", UpdateURL: env.updateURL},
+		HordeJobID:    "job-1",
+		Status:        models.StatusPending,
+		PendingReport: true,
+		CreatedAt:     env.clock.Now(),
+	}))
+
+	// Still queued in Horde: Swarm gets "running" with the job link anyway
+	env.horde.set(`{"id":"job-1","state":"Waiting","batches":[]}`)
+	env.monitor.CheckJobs(context.Background())
+	require.Equal(t, []string{"running"}, env.swarm.statuses())
+	assert.Contains(t, env.swarm.last().JobUrl, "/job/job-1")
+	assert.Equal(t, "Horde job created, waiting for an agent", env.swarm.last().Messages[0])
+
+	job, ok := env.storage.Get("job-1")
+	require.True(t, ok)
+	assert.True(t, job.RunningReported)
+	assert.False(t, job.PendingReport)
+
+	// Not repeated once the job runs
+	env.horde.set(`{"id":"job-1","state":"Running","batches":[{"error":"None","steps":[]}]}`)
+	env.monitor.CheckJobs(context.Background())
+	assert.Equal(t, []string{"running"}, env.swarm.statuses())
+}
+
+func TestCheckJobsSkipsRunningWhenAlreadyReported(t *testing.T) {
 	env := newTestEnv(t)
 	require.NoError(t, env.storage.Store("job-1", &models.JobMapping{
 		SwarmTest:       models.SwarmTestRequest{Changelist: "1", UpdateURL: env.updateURL},

@@ -302,6 +302,9 @@ func TestValidate(t *testing.T) {
 		{name: "allowed host with scheme", mutate: func(c *Config) { c.Swarm.AllowedHost = "https://swarm" }, errContains: "invalid swarm allowed host"},
 		{name: "allowed host with path", mutate: func(c *Config) { c.Swarm.AllowedHost = "swarm/api" }, errContains: "invalid swarm allowed host"},
 		{name: "allowed host with port", mutate: func(c *Config) { c.Swarm.AllowedHost = "swarm.example.com:8443" }},
+		{name: "access client id without secret", mutate: func(c *Config) { c.Swarm.AccessClientID = "abc.access" }, errContains: "Cloudflare Access"},
+		{name: "access secret without client id", mutate: func(c *Config) { c.Swarm.AccessClientSecret = "s3cret" }, errContains: "Cloudflare Access"},
+		{name: "access credentials pair", mutate: func(c *Config) { c.Swarm.AccessClientID, c.Swarm.AccessClientSecret = "abc.access", "s3cret" }},
 	}
 
 	for _, tt := range tests {

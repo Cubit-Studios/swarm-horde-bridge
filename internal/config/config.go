@@ -70,6 +70,8 @@ func loadEnvOverrides(cfg *Config) error {
 	envString("DATA_DIR", &cfg.DataDir)
 	envString("WEBHOOK_TOKEN", &cfg.Server.WebhookToken)
 	envString("SWARM_ALLOWED_HOST", &cfg.Swarm.AllowedHost)
+	envString("SWARM_CF_ACCESS_CLIENT_ID", &cfg.Swarm.AccessClientID)
+	envString("SWARM_CF_ACCESS_CLIENT_SECRET", &cfg.Swarm.AccessClientSecret)
 
 	ints := []struct {
 		name string
@@ -130,6 +132,9 @@ func validate(cfg *Config) error {
 	}
 	if err := validateAllowedHost(cfg.Swarm.AllowedHost); err != nil {
 		return fmt.Errorf("invalid swarm allowed host: %w", err)
+	}
+	if (cfg.Swarm.AccessClientID == "") != (cfg.Swarm.AccessClientSecret == "") {
+		return fmt.Errorf("swarm Cloudflare Access credentials need both the client id and the client secret (SWARM_CF_ACCESS_CLIENT_ID / SWARM_CF_ACCESS_CLIENT_SECRET)")
 	}
 	if cfg.Horde.APIKey == "" {
 		return fmt.Errorf("horde API key is required (HORDE_API_KEY)")

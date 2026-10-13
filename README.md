@@ -9,11 +9,14 @@ A middleware service that bridges Helix Swarm code reviews with Epic's Horde CI/
    and the update URL, answers `202 Accepted` immediately, and creates the job
    in the background.
 2. The bridge creates a Horde preflight job (`POST /api/v1/jobs`, named
-   `Swarm preflight CL <change>`) on the configured stream and template, reports
-   `running` to Swarm, then starts tracking the job. If the job cannot be
-   created, `fail` is reported to Swarm with the error.
+   `Swarm preflight CL <change>`) on the configured stream and template and
+   starts tracking the job. If the job cannot be created, `fail` is reported to
+   Swarm with the error.
 3. A background monitor polls `GET /api/v1/jobs/{id}` every `MONITOR_INTERVAL`
-   seconds and reports `running` / `pass` / `fail` back to Swarm using the update URL.
+   seconds and reports `running` (once, with the job link, on its first poll:
+   Swarm rewrites the test run right after the webhook returns, so an update
+   sent at creation time would be lost) and then `pass` / `fail` back to Swarm
+   using the update URL.
 4. Tracked jobs are persisted to `DATA_DIR/jobs.json`, so a restart does not lose
    in-flight jobs: they are resumed at startup and Swarm still gets a final status.
    If a final status cannot be delivered to Swarm, it is retried on the next poll.
@@ -150,6 +153,8 @@ explicit error.
 | `WEBHOOK_TOKEN`       | `server.webhook_token` | *(empty: no auth)*        | Shared secret required on the webhook, as `?token=<secret>` or header `X-Webhook-Token`; 401 otherwise. A warning is logged at startup when unset |
 | `SWARM_ALLOWED_HOST`  | `swarm.allowed_host`   | *(empty: no check)*       | Host (optionally `host:port`) that `update_url` must point to, over https (http only for `localhost`/`127.0.0.1`); other URLs are rejected with 400. A warning is logged at startup when unset |
 | `SWARM_TIMEOUT`       | `swarm.timeout`        | `30`                      | Timeout of status updates sent to Swarm, seconds |
+| `SWARM_CF_ACCESS_CLIENT_ID` | `swarm.access_client_id` | *(empty)*          | With `SWARM_CF_ACCESS_CLIENT_SECRET`: a Cloudflare Access service token allowed by the Swarm application, sent as `CF-Access-Client-Id` / `CF-Access-Client-Secret` on every status update. Needed when Swarm is behind Access and the bridge's traffic does not carry a WARP identity (e.g. from a container). Both or none |
+| `SWARM_CF_ACCESS_CLIENT_SECRET` | `swarm.access_client_secret` | *(empty)*  | Secret of the Access service token |
 | `PORT`                | `server.port`          | `8080`                    | HTTP listen port (also used by `-healthcheck`) |
 | `MONITOR_INTERVAL`    | `monitor.interval`     | `30`                      | Horde job polling interval, seconds |
 | `MAX_JOB_AGE`         | `monitor.max_job_age`  | `14400`                   | Seconds after which an unfinished job is reported to Swarm as failed and no longer tracked |
@@ -160,6 +165,10 @@ explicit error.
 | `LOG_LEVEL`           | `log_level`            | `info`                    | `trace`, `debug`, `info`, `warn`, `error` |
 | `DATA_DIR`            | `data_dir`             | `data` (relative to the working directory; the Docker image sets `/data`) | Directory of the persisted job store (`jobs.json`); created if missing |
 | `CONFIG_FILE`         | -                      | `config.yaml` (`/etc/swarm-horde-bridge/config.yaml` in the image) | Default path of the optional YAML file; the `-config` flag overrides it |
+
+Status updates are never redirected: a 3xx answer (typically an access proxy's
+login page), an HTML body or a JSON body with a non-null `error` is reported as
+a failed update and retried by the monitor.
 
 Removed settings: `swarm.host` / `SWARM_HOST` and `timeouts.http_client` /
 `TIMEOUT_HTTP_CLIENT` were never used and are now ignored if present. Swarm

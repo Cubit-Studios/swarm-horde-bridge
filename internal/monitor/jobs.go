@@ -147,7 +147,9 @@ func (m *JobMonitor) setStatus(log zerolog.Logger, job *models.JobMapping, statu
 // isReportable reports whether a new status has to be sent to Swarm. Final
 // statuses always are; "running" only the first time, because Horde reports
 // Waiting between batches and every "running" update becomes a Swarm activity
-// (and a Slack notification).
+// (and a Slack notification). A freshly created job is stored with
+// PendingReport set, so its first poll sends "running" with the job link even
+// while the job is still queued.
 func isReportable(job *models.JobMapping, status models.JobStatus) bool {
 	if isFinal(status) {
 		return true
@@ -167,6 +169,8 @@ func swarmUpdateFor(job *models.JobMapping) (string, []string) {
 		return services.SwarmStatusPass, services.SwarmMessages("Horde job passed")
 	case models.StatusFailed:
 		return services.SwarmStatusFail, services.SwarmMessages("Horde job failed", job.Reason)
+	case models.StatusPending:
+		return services.SwarmStatusRunning, services.SwarmMessages("Horde job created, waiting for an agent")
 	default:
 		return services.SwarmStatusRunning, services.SwarmMessages("Horde job is running")
 	}

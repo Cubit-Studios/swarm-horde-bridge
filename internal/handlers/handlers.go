@@ -185,29 +185,21 @@ func (h *Handler) createJob(req models.SwarmTestRequest) {
 	log = log.With().Str("job_id", jobID).Logger()
 	log.Info().Msg("Created Horde job")
 
-	// Report "running" before the job is stored: the monitor only sees the
-	// job afterwards, so its updates can never be overtaken by this one.
-	jobURL := h.hordeService.JobURL(jobID)
-	runningReported := true
-	if err := h.swarmService.UpdateStatus(ctx, req.UpdateURL, services.SwarmStatusRunning,
-		services.SwarmMessages("Started Horde job", jobURL), jobURL); err != nil {
-		// Not fatal: the monitor reports "running" once the job runs
-		log.Error().Err(err).Msg("failed to update swarm status")
-		runningReported = false
-	}
-
+	// The first Swarm update (status "running" with the job link) is left to
+	// the monitor's next poll rather than sent right away: Swarm writes its own
+	// copy of the test run just after the webhook returns, and an update
+	// arriving in that window is overwritten (the link then never shows up).
 	now := time.Now()
 	if h.cfg.Clock != nil {
 		now = h.cfg.Clock.Now()
 	}
 	mapping := &models.JobMapping{
-		SwarmTest:  req,
-		HordeJobID: jobID,
-		Status:     models.StatusPending,
-		// Swarm already knows the job is running (unless that update failed)
-		RunningReported: runningReported,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		SwarmTest:     req,
+		HordeJobID:    jobID,
+		Status:        models.StatusPending,
+		PendingReport: true,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 	if err := h.jobStorage.Store(jobID, mapping); err != nil {
 		// The job is still tracked in memory, only a restart would lose it
