@@ -45,8 +45,13 @@ func NewSwarmService(cfg *config.Config, logger zerolog.Logger) *SwarmService {
 }
 
 // UpdateStatus posts a test run status to the update URL supplied by Swarm.
-// jobURL is the link shown in Swarm (may be empty).
+// jobURL is the link shown in Swarm. Swarm rejects an update whose url is
+// empty ("stringLengthTooShort"), so when there is no job to link to (the job
+// could not be created) the Horde stream page is sent instead.
 func (s *SwarmService) UpdateStatus(ctx context.Context, updateURL string, status string, messages []string, jobURL string) error {
+	if jobURL == "" {
+		jobURL = s.fallbackURL()
+	}
 	update := models.SwarmUpdateRequest{
 		Status:   status,
 		Messages: limitMessages(messages),
@@ -85,6 +90,19 @@ func (s *SwarmService) UpdateStatus(ctx context.Context, updateURL string, statu
 		return fmt.Errorf("unexpected status from swarm: %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 	return checkSwarmResponse(resp.Header.Get("Content-Type"), respBody)
+}
+
+// fallbackURL is the link sent to Swarm when no Horde job exists: the stream's
+// page on the Horde dashboard, or the dashboard itself.
+func (s *SwarmService) fallbackURL() string {
+	base := strings.TrimRight(s.config.Horde.PublicURL, "/")
+	if base == "" {
+		return ""
+	}
+	if s.config.Horde.StreamId != "" {
+		return base + "/stream/" + s.config.Horde.StreamId
+	}
+	return base
 }
 
 // checkSwarmResponse verifies that a 2xx response really comes from the Swarm

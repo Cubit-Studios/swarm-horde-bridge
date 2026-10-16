@@ -341,6 +341,43 @@ func TestUpdateStatusEnforcesSwarmLimits(t *testing.T) {
 	}
 }
 
+func TestUpdateStatusSendsStreamURLWhenThereIsNoJob(t *testing.T) {
+	// Swarm rejects an update with an empty url, so a failure reported before
+	// a job exists must still carry a link.
+	var got models.SwarmUpdateRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		Swarm: config.SwarmConfig{Timeout: 5},
+		Horde: config.HordeConfig{PublicURL: "https://horde.example.com/", StreamId: "ue-main"},
+	}
+	service := NewSwarmService(cfg, zerolog.Nop())
+	if err := service.UpdateStatus(context.Background(), server.URL, "fail", []string{"Failed to create Horde job"}, ""); err != nil {
+		t.Fatalf("UpdateStatus() error = %v", err)
+	}
+	if got.JobUrl != "https://horde.example.com/stream/ue-main" {
+		t.Errorf("expected the stream page as url, got %q", got.JobUrl)
+	}
+
+	cfg.Horde.StreamId = ""
+	if err := service.UpdateStatus(context.Background(), server.URL, "fail", []string{"x"}, ""); err != nil {
+		t.Fatalf("UpdateStatus() error = %v", err)
+	}
+	if got.JobUrl != "https://horde.example.com" {
+		t.Errorf("expected the dashboard as url, got %q", got.JobUrl)
+	}
+
+	if err := service.UpdateStatus(context.Background(), server.URL, "pass", nil, "https://horde.example.com/job/1"); err != nil {
+		t.Fatalf("UpdateStatus() error = %v", err)
+	}
+	if got.JobUrl != "https://horde.example.com/job/1" {
+		t.Errorf("a job url must win over the fallback, got %q", got.JobUrl)
+	}
+}
+
 func TestCheckUpdateURL(t *testing.T) {
 	tests := []struct {
 		url     string
